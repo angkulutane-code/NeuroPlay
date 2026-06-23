@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="th" class="h-full bg-slate-50 text-slate-800 transition-all duration-300">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuroPlay AI - Clinical Assessment System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Sarabun', 'Space Grotesk', sans-serif;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Mirror Canvas */
+        #game-canvas, #webcam-input { transform: scaleX(-1); }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+
+        /* ========================================= */
+        /* ELDER-FRIENDLY UI CSS                     */
+        /* ========================================= */
+        .setting-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .setting-card:hover {
+            border-color: #bfdbfe;
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.05);
+        }
+        .setting-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            background: #f8fafc;
+            color: #64748b;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .setting-btn:hover { background: #f1f5f9; border-color: #cbd5e1; }
+        
+        /* Active State styles based on color theme */
+        .setting-btn.active-blue { background: #2563eb; color: white; border-color: #2563eb; box-shadow: 0 4px 12px rgba(37,99,235,0.2); }
+        .setting-btn.active-purple { background: #9333ea; color: white; border-color: #9333ea; box-shadow: 0 4px 12px rgba(147,51,234,0.2); }
+        .setting-btn.active-indigo { background: #4f46e5; color: white; border-color: #4f46e5; box-shadow: 0 4px 12px rgba(79,70,229,0.2); }
+        
+        /* Check icon toggling */
+        .setting-btn .check-icon { display: none; }
+        .setting-btn[class*="active-"] .check-icon { display: block; }
+
+        /* Tutorial Overlay */
+        .tutorial-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.85);
+            z-index: 1000;
+            pointer-events: auto;
+        }
+        .tutorial-box {
+            position: absolute;
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            width: 320px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            pointer-events: auto;
+            border-top: 6px solid #10b981;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        .tutorial-box.show { opacity: 1; transform: translateY(0); }
+        .highlight-step {
+            position: relative;
+            z-index: 1001 !important;
+            background: white;
+            box-shadow: 0 0 0 10px rgba(255, 255, 255, 0.1), 0 20px 40px rgba(0,0,0,0.2) !important;
+            pointer-events: auto;
+            border-radius: 16px;
+        }
+
+        /* Language Toggle Switch */
+        .lang-switch {
+            display: flex;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        .lang-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #64748b;
+        }
+        .lang-btn.active {
+            background: #ffffff;
+            color: #2563eb;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden text-base relative" id="main-body">
+
+    <!-- ================= PATIENT REGISTRATION MODAL ================= -->
+    <div id="patient-modal" class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center transition-opacity duration-300">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-8 mx-4 transform transition-all scale-100 relative">
+            
+            <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-2xl"><i data-lucide="user-plus" class="w-8 h-8"></i></div>
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-800" data-i18n="reg_title">ลงทะเบียนผู้ป่วย</h2>
+                        <p class="text-sm text-slate-500" data-i18n="reg_desc">กรอกข้อมูลพื้นฐานก่อนเริ่มเซสชันประเมิน</p>
+                    </div>
+                </div>
+                <!-- Language Toggle -->
+                <div class="lang-switch">
+                    <button type="button" onclick="setLanguage('th')" class="lang-btn active" id="lang-btn-th-modal">TH</button>
+                    <button type="button" onclick="setLanguage('en')" class="lang-btn" id="lang-btn-en-modal">EN</button>
+                </div>
+            </div>
+            
+            <form id="patient-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5" data-i18n="reg_name">ชื่อ-นามสกุล</label>
+                    <input type="text" id="pt-name" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all font-semibold" data-i18n-ph="reg_name_ph" placeholder="เช่น คุณสมศักดิ์ รักดี">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5" data-i18n="reg_hn">รหัสประจำตัว (HN)</label>
+                        <input type="text" id="pt-hn" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all font-mono" placeholder="HN-XXXXX">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5" data-i18n="reg_age">อายุ (ปี)</label>
+                        <input type="number" id="pt-age" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all" placeholder="60">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5" data-i18n="reg_symptom">อาการเบื้องต้น (ฝั่งที่อ่อนแรง)</label>
+                    <select id="pt-symptom" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all font-semibold">
+                        <option value="left" data-i18n="symp_left">Stroke ซีกซ้าย (แขนซ้ายอ่อนแรง)</option>
+                        <option value="right" data-i18n="symp_right">Stroke ซีกขวา (แขนขวาอ่อนแรง)</option>
+                        <option value="none" data-i18n="symp_none">ประเมินความสามารถทั่วไป</option>
+                    </select>
+                </div>
+                
+                <div class="pt-4 mt-6 border-t border-slate-100">
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition-all flex justify-center items-center gap-2">
+                        <i data-lucide="check-circle" class="w-5 h-5"></i>
+                        <span data-i18n="btn_save_login">บันทึกและเข้าสู่ระบบ</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= CLINICAL REPORT MODAL ================= -->
+    <div id="report-modal" class="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center transition-opacity duration-300 hidden opacity-0">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-8 mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><i data-lucide="file-bar-chart-2" class="w-8 h-8"></i></div>
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-800" data-i18n="rep_title">รายงานวินิจฉัยภาวะ Learn Non-Use</h2>
+                        <p class="text-sm text-slate-500" id="report-pt-info">ข้อมูลผู้ป่วย: -</p>
+                    </div>
+                </div>
+                <button onclick="closeReport()" class="p-2 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-xl transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
+                <div class="space-y-4">
+                    <h3 class="text-base font-bold text-slate-700 border-l-4 border-blue-500 pl-3" data-i18n="rep_analysis">การวิเคราะห์เปรียบเทียบ (Clinical Analysis)</h3>
+                    
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <p class="text-xs font-bold text-slate-500 uppercase" data-i18n="rep_cap_title">1. สมรรถภาพสูงสุด (Capacity Test)</p>
+                        <p class="text-sm text-slate-600 mb-2" data-i18n="rep_cap_desc">ประเมินจากการบังคับใช้แขนทีละข้าง</p>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-bold text-purple-600"><span data-i18n="rep_score_l">คะแนนแขนซ้าย:</span> <span id="report-cap-l">0</span></span>
+                            <span class="text-sm font-bold text-indigo-600"><span data-i18n="rep_score_r">คะแนนแขนขวา:</span> <span id="report-cap-r">0</span></span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <p class="text-xs font-bold text-slate-500 uppercase" data-i18n="rep_use_title">2. การใช้งานจริง (Spontaneous Use Test)</p>
+                        <p class="text-sm text-slate-600 mb-2" data-i18n="rep_use_desc">ประเมินจากการให้อิสระใช้แขนทั้งสองข้าง</p>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-bold text-purple-600"><span data-i18n="rep_freq_l">ความถี่แขนซ้าย:</span> <span id="report-use-l">0</span>%</span>
+                            <span class="text-sm font-bold text-indigo-600"><span data-i18n="rep_freq_r">ความถี่แขนขวา:</span> <span id="report-use-r">0</span>%</span>
+                        </div>
+                    </div>
+                    
+                    <div id="report-diagnosis-card" class="p-5 rounded-2xl border bg-emerald-50 border-emerald-200">
+                        <h4 class="font-extrabold text-lg flex items-center gap-2 mb-2" id="report-diagnosis-title">
+                            <i data-lucide="check-circle" class="w-5 h-5"></i> <span data-i18n="rep_status_normal">ปกติ (สมดุล)</span>
+                        </h4>
+                        <p class="text-sm font-medium" id="report-diagnosis-desc" data-i18n="rep_status_normal_desc">
+                            ผู้ป่วยสามารถใช้งานแขนทั้งสองข้างได้อย่างเหมาะสมเมื่อได้รับอิสระ
+                        </p>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-base font-bold text-slate-700 border-l-4 border-indigo-500 pl-3 mb-4" data-i18n="rep_chart_title">กราฟเปรียบเทียบ (Performance vs Usage)</h3>
+                    <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm h-64 relative">
+                        <canvas id="diagnosisChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button onclick="window.print()" class="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all flex items-center gap-2"><i data-lucide="printer" class="w-4 h-4"></i> <span data-i18n="btn_print">พิมพ์รายงาน</span></button>
+                <button onclick="closeReport()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> <span data-i18n="btn_done">เสร็จสิ้น</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= TUTORIAL OVERLAY ================= -->
+    <div id="tutorial-overlay" class="tutorial-overlay">
+        <div class="tutorial-box" id="tutorial-box">
+            <h4 id="tut-title" class="text-blue-700 font-bold text-lg mb-2">คำแนะนำ</h4>
+            <p id="tut-desc" class="text-slate-600 text-sm leading-relaxed mb-5">รายละเอียด...</p>
+            <div class="flex justify-between items-center border-t border-slate-100 pt-4">
+                <button onclick="endTutorial()" class="text-slate-400 hover:text-slate-600 text-xs font-bold transition-all" data-i18n="btn_skip_tour">ข้ามทัวร์นี้</button>
+                <button onclick="nextTutorial()" id="btn-tut-next" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1">
+                    <span data-i18n="btn_next">ถัดไป</span> <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= APP HOW TO USE POPUP (DETAILED GUIDE) ================= -->
+    <div id="app-guide-modal" class="fixed inset-0 bg-slate-900/60 z-[100] flex items-center justify-center transition-all duration-300 hidden opacity-0">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-8 mx-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+                <div class="flex items-center gap-4">
+                    <div class="p-3 bg-blue-50 text-blue-600 rounded-2xl"><i data-lucide="book-open" class="w-8 h-8"></i></div>
+                    <div>
+                        <h2 class="text-2xl font-extrabold text-slate-800" data-i18n="guide_title">คู่มือวิธีการเล่นและใช้งานแอป</h2>
+                        <p class="text-sm text-slate-500" data-i18n="guide_subtitle">เรียนรู้วิธีตั้งค่า วิธีการควบคุมด้วยนิ้วมือ และการดูรายงาน</p>
+                    </div>
+                </div>
+                <button onclick="closeAppGuideModal()" class="p-2 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-xl transition-all"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <div class="space-y-6 text-slate-600 text-sm">
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center shrink-0">1</div>
+                    <div class="space-y-1">
+                        <h4 class="font-bold text-slate-800 text-base" data-i18n="g1_title">ลงทะเบียนข้อมูลผู้ป่วย</h4>
+                        <p class="leading-relaxed" data-i18n="g1_desc">เมื่อเปิดโปรแกรมครั้งแรก กรุณากรอกชื่อและรหัสประจำตัวผู้ป่วย (HN) เพื่อระบุฝั่งที่อ่อนแรง ข้อมูลนี้จำเป็นสำหรับการนำสถิติมาเปรียบเทียบและวิเคราะห์ผลในภายหลังอย่างถูกต้อง</p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center shrink-0">2</div>
+                    <div class="space-y-2">
+                        <h4 class="font-bold text-slate-800 text-base" data-i18n="g2_title">ตั้งค่าการฝึกซ้อม (ปุ่มตั้งค่า 1-2-3)</h4>
+                        <p class="leading-relaxed" data-i18n="g2_desc">มี 3 ขั้นตอนหลักที่ทำความเข้าใจได้ง่ายๆ:</p>
+                        <ul class="list-disc pl-5 space-y-1 text-slate-500">
+                            <li><strong data-i18n="g2_l1_st">1. เลือกมือที่ต้องการฝึก:</strong> <span data-i18n="g2_l1_nd">บังคับใช้เฉพาะมือซ้าย (สีม่วง), บังคับใช้เฉพาะมือขวา (สีน้ำเงิน) หรือเลือกโหมด "อิสระ" เพื่อปล่อยให้ขยับได้ตามความต้องการจริง</span></li>
+                            <li><strong data-i18n="g2_l2_st">2. ระยะเวลา:</strong> <span data-i18n="g2_l2_nd">เลือกกำหนดเวลา 30 หรือ 60 วินาทีในหนึ่งรอบ</span></li>
+                            <li><strong data-i18n="g2_l3_st">3. ระดับความยาก:</strong> <span data-i18n="g2_l3_nd">กำหนดรูปแบบการขยับของเป้าหมายวงกลม</span></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center shrink-0">3</div>
+                    <div class="space-y-1">
+                        <h4 class="font-bold text-slate-800 text-base" data-i18n="g3_title">การควบคุมและเล่นเกมบำบัดด้วยกล้อง</h4>
+                        <p class="leading-relaxed"><span data-i18n="g3_desc1">นั่งหน้ากล้องให้อยู่ในตำแหน่งกึ่งกลาง</span> <strong data-i18n="g3_desc2">ชูปลายนิ้วชี้ขึ้น</strong> <span data-i18n="g3_desc3">และเลื่อนพิกัดตัวชี้สีน้ำเงินไปแตะวงกลมเป้าหมายสีเขียวบนจอ หากฝ่าฝืนใช้มือผิดข้างในโหมดบังคับ จะมีหน้าจอสีแดงแจ้งเตือนทันที</span></p>
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 font-bold flex items-center justify-center shrink-0">4</div>
+                    <div class="space-y-1">
+                        <h4 class="font-bold text-slate-800 text-base" data-i18n="g4_title">การสร้างและตรวจสอบรายงานวินิจฉัย</h4>
+                        <p class="leading-relaxed"><span data-i18n="g4_desc1">เมื่อเล่นครบกำหนดเวลาแล้ว ให้สลับไปที่</span> <strong>"คอนโซลสรุปผล"</strong> <span data-i18n="g4_desc2">เพื่อดูข้อมูล Real-time หรือกดปุ่ม</span> <strong>"ดูรายงานวินิจฉัย"</strong> <span data-i18n="g4_desc3">เพื่อเปิดกราฟแสดงอัตราส่วนการใช้มือ เพื่อให้แพทย์และญาติติดตามผล Learned Non-Use ได้ทันที</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-6 border-t border-slate-100 mt-6">
+                <button onclick="closeAppGuideModal()" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"><i data-lucide="check" class="w-4 h-4"></i> <span data-i18n="btn_understood">เข้าใจขั้นตอนทั้งหมดแล้ว</span></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-4 z-20">
+        <div class="flex items-center space-x-3 w-full md:w-auto">
+            <div class="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-500/20 shrink-0">
+                <i data-lucide="stethoscope" class="w-6 h-6"></i>
+            </div>
+            <div>
+                <span class="text-[10px] font-bold text-blue-500 tracking-wider uppercase font-mono">Clinical Assessment System</span>
+                <h1 class="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
+                    NeuroPlay <span class="bg-blue-50 text-blue-600 text-xs px-2.5 py-0.5 rounded-full border border-blue-200 font-mono">v4.5.0-MED</span>
+                </h1>
+            </div>
+        </div>
+        
+        <div class="flex flex-wrap items-center justify-between md:justify-end gap-3 w-full md:w-auto">
+            <div class="flex items-center space-x-2 bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 shadow-inner">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="camera-status-dot"></span>
+                <span class="text-xs font-semibold text-slate-600" id="camera-status-label" data-i18n="status_ready">ระบบพร้อมใช้งาน</span>
+            </div>
+            
+            <button onclick="openAppGuideModal()" class="flex items-center space-x-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 px-4 py-2 rounded-xl border border-slate-200 text-sm font-bold transition-all shadow-sm">
+                <i data-lucide="help-circle" class="w-4 h-4 text-emerald-500"></i>
+                <span data-i18n="btn_how_to">วิธีการใช้งาน</span>
+            </button>
+            <button onclick="generateReport()" class="flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-xl border border-indigo-200 text-sm font-bold transition-all shadow-sm">
+                <i data-lucide="file-line-chart" class="w-4 h-4"></i>
+                <span data-i18n="btn_view_report">ดูรายงานวินิจฉัย</span>
+            </button>
+
+            <!-- Language Toggle (Header) -->
+            <div class="lang-switch ml-2">
+                <button type="button" onclick="setLanguage('th')" class="lang-btn active" id="lang-btn-th-header">TH</button>
+                <button type="button" onclick="setLanguage('en')" class="lang-btn" id="lang-btn-en-header">EN</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Left Sidebar -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col justify-between p-5 shrink-0 hidden md:flex shadow-sm z-10">
+            <div class="space-y-6">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider px-3 mb-3" data-i18n="menu_title">เมนูประเมินทางคลินิก</p>
+                    <nav class="space-y-2">
+                        <button onclick="switchTab('dashboard')" id="btn-tab-dashboard" class="w-full flex items-center space-x-3 bg-blue-50 text-blue-700 px-4 py-3.5 rounded-xl font-bold text-sm transition-all border border-blue-100">
+                            <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                            <span data-i18n="menu_dash">คอนโซลสรุปผล</span>
+                        </button>
+                        <button onclick="switchTab('rehab')" id="btn-tab-rehab" class="w-full flex items-center space-x-3 text-slate-600 hover:bg-slate-50 hover:text-blue-600 px-4 py-3.5 rounded-xl font-bold text-sm transition-all border border-transparent">
+                            <i data-lucide="gamepad-2" class="w-5 h-5"></i>
+                            <span data-i18n="menu_rehab">ห้องปฏิบัติการเกมบำบัด</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Patient Profile Card -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-inner">
+                    <div class="flex items-center space-x-3 mb-3 pb-3 border-b border-slate-200">
+                        <div class="w-11 h-11 rounded-xl bg-blue-100 border border-blue-200 flex items-center justify-center font-black text-blue-600 text-sm shrink-0">
+                            PT
+                        </div>
+                        <div class="overflow-hidden">
+                            <h4 class="text-sm font-bold text-slate-800 truncate" id="display-pt-name" data-i18n="pt_waiting">รอการลงทะเบียน</h4>
+                            <p class="text-[10px] text-slate-400 font-mono truncate" id="display-pt-hn">HN: -</p>
+                        </div>
+                    </div>
+                    <div class="space-y-2.5 text-xs text-slate-600">
+                        <div class="flex justify-between flex-col gap-1">
+                            <span class="text-slate-500" data-i18n="pt_symptom">อาการเบื้องต้น:</span>
+                            <span class="font-bold text-slate-800 leading-tight" id="display-pt-symp">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace Area -->
+        <main class="flex-1 overflow-y-auto p-6 bg-slate-50" id="workspace">
+
+            <!-- ================= TAB 1: DASHBOARD ================= -->
+            <div id="tab-dashboard" class="space-y-6 block">
+                <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 md:p-8 rounded-3xl border border-blue-500 relative overflow-hidden shadow-lg">
+                    <div class="max-w-2xl space-y-4 relative z-10">
+                        <h2 class="text-2xl md:text-3xl font-extrabold text-white leading-tight" data-i18n="dash_hero_title">สรุปผลประเมินพฤติกรรมการควบคุมแขน</h2>
+                        <p class="text-blue-100 text-sm md:text-base leading-relaxed" data-i18n="dash_hero_desc">
+                            ระบบรวบรวมข้อมูลจากการเคลื่อนไหวเพื่อวิเคราะห์ความถนัด, ตรวจจับภาวะ Learn Non-Use, และประเมินความแตกต่างด้านสมรรถภาพระหว่างแขนซ้ายและขวาโดยอัตโนมัติ
+                        </p>
+                        <div class="pt-2 flex gap-3">
+                            <button onclick="switchTab('rehab')" class="bg-white hover:bg-slate-50 text-blue-700 font-extrabold px-6 py-3.5 rounded-xl text-sm transition-all flex items-center space-x-2 shadow-md">
+                                <i data-lucide="play" class="w-4.5 h-4.5 fill-current"></i>
+                                <span data-i18n="btn_goto_game">ไปที่ห้องประเมิน (Game Mode)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider" data-i18n="dash_c1_title">1. มือถนัด (Dominance)</span>
+                            <div class="p-1.5 bg-blue-50 text-blue-600 rounded-lg"><i data-lucide="hand" class="w-4 h-4"></i></div>
+                        </div>
+                        <div class="text-2xl font-black text-slate-800" id="dash-dominant" data-i18n="status_waiting_data">รอข้อมูล</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider" data-i18n="dash_c2_title">2. ความแตกต่างซ้าย-ขวา</span>
+                            <div class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg"><i data-lucide="scale" class="w-4 h-4"></i></div>
+                        </div>
+                        <div class="text-2xl font-black text-slate-800" id="dash-symmetry">0%</div>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm transition-colors duration-300" id="dash-lnu-card">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider" data-i18n="dash_c3_title">3. ภาวะ Learn Non-Use</span>
+                            <div class="p-1.5 bg-slate-50 text-slate-600 rounded-lg" id="lnu-icon-wrap"><i data-lucide="shield-check" class="w-4 h-4" id="lnu-icon"></i></div>
+                        </div>
+                        <div class="text-lg font-black text-slate-800 leading-tight" id="dash-lnu-status" data-i18n="status_waiting_eval">รอการประเมินแยกข้าง</div>
+                        <p class="text-[10px] text-slate-500 mt-1" id="dash-lnu-desc" data-i18n="status_waiting_desc">ต้องเล่นโหมดอิสระ และโหมดบังคับมือ</p>
+                    </div>
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-start mb-3">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider" data-i18n="dash_c4_title">คะแนนรวมทั้งหมด</span>
+                            <div class="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg"><i data-lucide="award" class="w-4 h-4"></i></div>
+                        </div>
+                        <div class="text-2xl font-black text-emerald-600"><span id="dash-total-score">0</span> <span class="text-lg" data-i18n="pts">คะแนน</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ================= TAB 2: REHABILITATION GAME ================= -->
+            <div id="tab-rehab" class="hidden space-y-6">
+                
+                <div class="flex justify-between items-center border-b border-slate-200 pb-3 mb-2">
+                    <h3 class="font-extrabold text-lg text-slate-800 flex items-center gap-2">
+                        <i data-lucide="settings-2" class="w-5 h-5 text-blue-600"></i> <span data-i18n="set_title">ตั้งค่าก่อนเริ่มฝึก</span>
+                    </h3>
+                    <button onclick="startTutorial()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-md transition-all flex items-center gap-2">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i> <span data-i18n="btn_tour">วิธีใช้งาน (สำหรับผู้เริ่มต้น)</span>
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <!-- Card 1: Constraint Mode -->
+                    <div class="setting-card" id="guide-step-1">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center"><i data-lucide="hand" class="w-5 h-5"></i></div>
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm" data-i18n="set_c1_title">1. เลือกมือที่ต้องการฝึก</div>
+                                <div class="text-xs text-slate-500" data-i18n="set_c1_desc">มือข้างที่อ่อนแรงหรือต้องการเน้น</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2.5">
+                            <button onclick="setHandMode('left', this)" class="setting-btn mode-btn"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_m_left">บังคับซ้าย</span></button>
+                            <button onclick="setHandMode('right', this)" class="setting-btn mode-btn"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_m_right">บังคับขวา</span></button>
+                            <button onclick="setHandMode('free', this)" class="setting-btn mode-btn active-blue"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_m_free">อิสระ (สองมือ)</span></button>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Timer -->
+                    <div class="setting-card" id="guide-step-2">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><i data-lucide="clock" class="w-5 h-5"></i></div>
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm" data-i18n="set_c2_title">2. เลือกระยะเวลา</div>
+                                <div class="text-xs text-slate-500" data-i18n="set_c2_desc">เวลาในการทำกายภาพต่อรอบ</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2.5 mt-auto">
+                            <button onclick="setTimeSetting(30, this)" class="setting-btn time-btn active-blue"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_t_30">30 วินาที</span></button>
+                            <button onclick="setTimeSetting(60, this)" class="setting-btn time-btn"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_t_60">60 วินาที</span></button>
+                        </div>
+                    </div>
+                    
+                    <!-- Card 3: Game Level -->
+                    <div class="setting-card" id="guide-step-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"><i data-lucide="bar-chart-2" class="w-5 h-5"></i></div>
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm" data-i18n="set_c3_title">3. เลือกระดับความยาก</div>
+                                <div class="text-xs text-slate-500" data-i18n="set_c3_desc">รูปแบบการเคลื่อนที่ของเป้าหมาย</div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2.5">
+                            <button onclick="setGameLevel(1, this)" class="setting-btn lvl-btn active-blue"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_l_1">Lv. 1 (เป้านิ่ง)</span></button>
+                            <button onclick="setGameLevel(2, this)" class="setting-btn lvl-btn"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_l_2">Lv. 2 (แม่นยำ)</span></button>
+                            <button onclick="setGameLevel(3, this)" class="setting-btn lvl-btn"><i data-lucide="check" class="w-4 h-4 check-icon"></i> <span data-i18n="set_l_3">Lv. 3 (เคลื่อนที่)</span></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game Canvas Area -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Left: Camera Frame -->
+                    <div id="guide-step-4" class="lg:col-span-2 bg-white p-5 rounded-3xl border border-slate-200 flex flex-col space-y-4 shadow-sm relative">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <div class="bg-rose-100 text-rose-600 px-4 py-1.5 rounded-xl border border-rose-200 flex items-center gap-2 shadow-sm">
+                                    <i data-lucide="timer" class="w-4 h-4"></i>
+                                    <span class="text-xl font-mono font-black" id="game-timer-display">00:30</span>
+                                </div>
+                                <span class="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full" id="game-mode-badge" data-i18n="game_mode_free">
+                                    โหมด: อิสระ (Free)
+                                </span>
+                            </div>
+                            <span class="text-lg font-black text-emerald-500 bg-emerald-50 px-4 py-1.5 rounded-xl border border-emerald-200" id="game-score-display">
+                                <span data-i18n="game_score">คะแนน:</span> 0
+                            </span>
+                        </div>
+
+                        <div class="relative w-full aspect-video bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 flex items-center justify-center shadow-inner">
+                            <video id="webcam-input" class="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none hidden" autoplay playsinline></video>
+                            <canvas id="game-canvas" class="absolute inset-0 w-full h-full cursor-crosshair z-10"></canvas>
+                            
+                            <!-- Warning Overlay -->
+                            <div id="wrong-hand-warning" class="absolute top-4 left-1/2 transform -translate-x-1/2 bg-rose-600 text-white px-6 py-2 rounded-full font-bold shadow-lg z-30 transition-opacity duration-200 opacity-0 flex items-center gap-2 pointer-events-none">
+                                <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                                <span data-i18n="game_warn_hand">กรุณาใช้มือที่กำหนดเท่านั้น!</span>
+                            </div>
+
+                            <!-- Start / End Overlay -->
+                            <div id="game-overlay" class="absolute inset-0 glass-panel z-20 flex flex-col items-center justify-center text-center p-6 space-y-5 transition-all duration-300">
+                                <div class="bg-blue-600 p-4 rounded-full border-4 border-blue-500/30 text-white shadow-lg" id="overlay-icon-wrap">
+                                    <i data-lucide="play" class="w-10 h-10 fill-current" id="overlay-icon"></i>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <h4 class="text-2xl font-extrabold text-slate-800" id="overlay-title" data-i18n="game_overlay_title">พร้อมเริ่มเซสชัน</h4>
+                                    <p class="text-sm font-semibold text-slate-500 max-w-md mx-auto" id="overlay-desc" data-i18n="game_overlay_desc">
+                                        ยืนยันการตั้งค่าด้านบน และกดปุ่มด้านล่างเพื่อเปิดกล้องเริ่มจับเวลา
+                                    </p>
+                                </div>
+                                <button onclick="startRoundTimer()" id="btn-start-round" class="bg-blue-600 hover:bg-blue-700 text-white font-black px-8 py-3.5 rounded-2xl text-base transition-all shadow-lg hover:scale-105 active:scale-95">
+                                    <span data-i18n="game_btn_start">เริ่มจับเวลา (Start)</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Live Round Logs -->
+                    <div class="bg-white p-6 rounded-3xl border border-slate-200 flex flex-col shadow-sm h-full">
+                        <div class="border-b border-slate-100 pb-3 flex justify-between items-center mb-4">
+                            <h3 class="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                                <i data-lucide="list-checks" class="w-5 h-5 text-blue-500"></i> <span data-i18n="log_title">ข้อมูลประเมินรายรอบ</span>
+                            </h3>
+                        </div>
+
+                        <div class="flex-1 overflow-y-auto space-y-3" id="round-logs-container">
+                            <div class="text-center text-xs text-slate-400 font-medium py-4" id="log-empty" data-i18n="log_empty">ยังไม่มีข้อมูลการเล่น</div>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-100 mt-4">
+                            <button onclick="generateReport()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-md transition-all flex justify-center items-center gap-2">
+                                <i data-lucide="file-bar-chart" class="w-4 h-4"></i> <span data-i18n="btn_gen_report">สร้างรายงานวินิจฉัย</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ================= TRANSLATION DICTIONARY ================= -->
+    <script>
+        const translations = {
+            th: {
+                reg_title: "ลงทะเบียนผู้ป่วย",
+                reg_desc: "กรอกข้อมูลพื้นฐานก่อนเริ่มเซสชันประเมิน",
+                reg_name: "ชื่อ-นามสกุล",
+                reg_name_ph: "เช่น คุณสมศักดิ์ รักดี",
+                reg_hn: "รหัสประจำตัว (HN)",
+                reg_age: "อายุ (ปี)",
+                reg_symptom: "อาการเบื้องต้น (ฝั่งที่อ่อนแรง)",
+                symp_left: "Stroke ซีกซ้าย (แขนซ้ายอ่อนแรง)",
+                symp_right: "Stroke ซีกขวา (แขนขวาอ่อนแรง)",
+                symp_none: "ประเมินความสามารถทั่วไป",
+                btn_save_login: "บันทึกและเข้าสู่ระบบ",
+                status_ready: "ระบบพร้อมใช้งาน",
+                btn_how_to: "วิธีการใช้งาน",
+                btn_view_report: "ดูรายงานวินิจฉัย",
+                menu_title: "เมนูประเมินทางคลินิก",
+                menu_dash: "คอนโซลสรุปผล",
+                menu_rehab: "ห้องปฏิบัติการเกมบำบัด",
+                pt_waiting: "รอการลงทะเบียน",
+                pt_symptom: "อาการเบื้องต้น:",
+                dash_hero_title: "สรุปผลประเมินพฤติกรรมการควบคุมแขน",
+                dash_hero_desc: "ระบบรวบรวมข้อมูลจากการเคลื่อนไหวเพื่อวิเคราะห์ความถนัด, ตรวจจับภาวะ Learn Non-Use, และประเมินความแตกต่างด้านสมรรถภาพระหว่างแขนซ้ายและขวาโดยอัตโนมัติ",
+                btn_goto_game: "ไปที่ห้องประเมิน (Game Mode)",
+                dash_c1_title: "1. มือถนัด (Dominance)",
+                dash_c2_title: "2. ความแตกต่างซ้าย-ขวา",
+                dash_c3_title: "3. ภาวะ Learn Non-Use",
+                dash_c4_title: "คะแนนรวมทั้งหมด",
+                status_waiting_data: "รอข้อมูล",
+                status_waiting_eval: "รอการประเมินแยกข้าง",
+                status_waiting_desc: "ต้องเล่นโหมดอิสระ และโหมดบังคับมือ",
+                pts: "คะแนน",
+                set_title: "ตั้งค่าก่อนเริ่มฝึก",
+                btn_tour: "วิธีใช้งาน (สำหรับผู้เริ่มต้น)",
+                set_c1_title: "1. เลือกมือที่ต้องการฝึก",
+                set_c1_desc: "มือข้างที่อ่อนแรงหรือต้องการเน้น",
+                set_m_left: "บังคับซ้าย",
+                set_m_right: "บังคับขวา",
+                set_m_free: "อิสระ (สองมือ)",
+                set_c2_title: "2. เลือกระยะเวลา",
+                set_c2_desc: "เวลาในการทำกายภาพต่อรอบ",
+                set_t_30: "30 วินาที",
+                set_t_60: "60 วินาที",
+                set_c3_title: "3. เลือกระดับความยาก",
+                set_c3_desc: "รูปแบบการเคลื่อนที่ของเป้าหมาย",
+                set_l_1: "Lv. 1 (เป้านิ่ง)",
+                set_l_2: "Lv. 2 (แม่นยำ)",
+                set_l_3: "Lv. 3 (เคลื่อนที่)",
+                game_mode_free: "โหมด: อิสระ (Free)",
+                game_mode_left: "โหมด: บังคับซ้าย (Forced Left)",
+                game_mode_right: "โหมด: บังคับขวา (Forced Right)",
+                game_score: "คะแนน:",
+                game_warn_hand: "กรุณาใช้มือที่กำหนดเท่านั้น!",
+                game_overlay_title: "พร้อมเริ่มเซสชัน",
+                game_overlay_desc: "ยืนยันการตั้งค่าด้านบน และกดปุ่มด้านล่างเพื่อเปิดกล้องเริ่มจับเวลา",
+                game_btn_start: "เริ่มจับเวลา (Start)",
+                game_btn_new: "เริ่มรอบใหม่ (New Round)",
+                log_title: "ข้อมูลประเมินรายรอบ",
+                log_empty: "ยังไม่มีข้อมูลการเล่น",
+                btn_gen_report: "สร้างรายงานวินิจฉัย",
+                guide_title: "คู่มือวิธีการเล่นและใช้งานแอป",
+                guide_subtitle: "เรียนรู้วิธีตั้งค่า วิธีการควบคุมด้วยนิ้วมือ และการดูรายงาน",
+                g1_title: "ลงทะเบียนข้อมูลผู้ป่วย",
+                g1_desc: "เมื่อเปิดโปรแกรมครั้งแรก กรุณากรอกชื่อและรหัสประจำตัวผู้ป่วย (HN) เพื่อระบุฝั่งที่อ่อนแรง ข้อมูลนี้จำเป็นสำหรับการนำสถิติมาเปรียบเทียบและวิเคราะห์ผลในภายหลังอย่างถูกต้อง",
+                g2_title: "ตั้งค่าการฝึกซ้อม (ปุ่มตั้งค่า 1-2-3)",
+                g2_desc: "มี 3 ขั้นตอนหลักที่ทำความเข้าใจได้ง่ายๆ:",
+                g2_l1_st: "1. เลือกมือที่ต้องการฝึก:",
+                g2_l1_nd: "บังคับใช้เฉพาะมือซ้าย (สีม่วง), บังคับใช้เฉพาะมือขวา (สีน้ำเงิน) หรือเลือกโหมด \"อิสระ\" เพื่อปล่อยให้ขยับได้ตามความต้องการจริง",
+                g2_l2_st: "2. ระยะเวลา:",
+                g2_l2_nd: "เลือกกำหนดเวลา 30 หรือ 60 วินาทีในหนึ่งรอบ",
+                g2_l3_st: "3. ระดับความยาก:",
+                g2_l3_nd: "กำหนดรูปแบบการขยับของเป้าหมายวงกลม",
+                g3_title: "การควบคุมและเล่นเกมบำบัดด้วยกล้อง",
+                g3_desc1: "นั่งหน้ากล้องให้อยู่ในตำแหน่งกึ่งกลาง",
+                g3_desc2: "ชูปลายนิ้วชี้ขึ้น",
+                g3_desc3: "และเลื่อนพิกัดตัวชี้สีน้ำเงินไปแตะวงกลมเป้าหมายสีเขียวบนจอ หากฝ่าฝืนใช้มือผิดข้างในโหมดบังคับ จะมีหน้าจอสีแดงแจ้งเตือนทันที",
+                g4_title: "การสร้างและตรวจสอบรายงานวินิจฉัย",
+                g4_desc1: "เมื่อเล่นครบกำหนดเวลาแล้ว ให้สลับไปที่",
+                g4_desc2: "เพื่อดูข้อมูล Real-time หรือกดปุ่ม",
+                g4_desc3: "เพื่อเปิดกราฟแสดงอัตราส่วนการใช้มือ เพื่อให้แพทย์และญาติติดตามผล Learned Non-Use ได้ทันที",
+                btn_understood: "เข้าใจขั้นตอนทั้งหมดแล้ว",
+                rep_title: "รายงานวินิจฉัยภาวะ Learn Non-Use",
+                rep_analysis: "การวิเคราะห์เปรียบเทียบ (Clinical Analysis)",
+                rep_cap_title: "1. สมรรถภาพสูงสุด (Capacity Test)",
+                rep_cap_desc: "ประเมินจากการบังคับใช้แขนทีละข้าง",
+                rep_score_l: "คะแนนแขนซ้าย:",
+                rep_score_r: "คะแนนแขนขวา:",
+                rep_use_title: "2. การใช้งานจริง (Spontaneous Use Test)",
+                rep_use_desc: "ประเมินจากการให้อิสระใช้แขนทั้งสองข้าง",
+                rep_freq_l: "ความถี่แขนซ้าย:",
+                rep_freq_r: "ความถี่แขนขวา:",
+                rep_status_normal: "ปกติ (สมดุล)",
+                rep_status_normal_desc: "ผู้ป่วยสามารถใช้งานแขนทั้งสองข้างได้อย่างเหมาะสมเมื่อได้รับอิสระ",
+                rep_chart_title: "กราฟเปรียบเทียบ (Performance vs Usage)",
+                btn_print: "พิมพ์รายงาน",
+                btn_done: "เสร็จสิ้น",
+                btn_skip_tour: "ข้ามทัวร์นี้",
+                btn_next: "ถัดไป",
+                lbl_left: "ซ้าย",
+                lbl_right: "ขวา",
+                lbl_left_hand: "มือซ้าย",
+                lbl_right_hand: "มือขวา",
+                lbl_sec: "วิ",
+                warn_lnu_l: "สงสัย LNU (แขนซ้าย)",
+                warn_lnu_r: "สงสัย LNU (แขนขวา)",
+                warn_lnu_desc: "ทำคะแนนได้ในโหมดบังคับ แต่ลดเลี่ยงในโหมดอิสระ",
+                end_title: "จบเซสชัน!",
+                end_desc1: "คะแนนรอบนี้: ",
+                end_desc2: " แต้ม | บันทึกข้อมูลสำเร็จ",
+                alert_no_data: "ยังไม่มีข้อมูลการประเมิน กรุณาเล่นเกมอย่างน้อย 1 รอบก่อนเปิดรายงานวินิจฉัยครับ",
+                diag_warn_l_desc: "แขนซ้ายมีสมรรถภาพสูงสุดถึง X% เมื่อเทียบกับแขนขวา แต่เมื่อให้อิสระ กลับเลือกใช้งานแขนซ้ายเพียง Y% เท่านั้น ควรเน้นบำบัดแบบ CIMT",
+                diag_warn_r_desc: "แขนขวามีสมรรถภาพสูงสุดเพียงพอ แต่เมื่อให้อิสระ กลับเลือกใช้งานเพียง Y% เท่านั้น",
+                diag_nodata: "ข้อมูลยังไม่เพียงพอ",
+                diag_nodata_desc: "ควรทำการทดสอบให้ครบทั้ง 3 โหมด (บังคับซ้าย, บังคับขวา, และอิสระสองมือ) เพื่อความแม่นยำในการวินิจฉัย"
+            },
+            en: {
+                reg_title: "Patient Registration",
+                reg_desc: "Please provide basic details before starting the session.",
+                reg_name: "Full Name",
+                reg_name_ph: "e.g., John Doe",
+                reg_hn: "Hospital Number (HN)",
+                reg_age: "Age (Years)",
+                reg_symptom: "Primary Symptom (Weak Side)",
+                symp_left: "Left Stroke (Left Arm Weakness)",
+                symp_right: "Right Stroke (Right Arm Weakness)",
+                symp_none: "General Assessment (No Weakness)",
+                btn_save_login: "Save & Start Session",
+                status_ready: "System Ready",
+                btn_how_to: "How to Use",
+                btn_view_report: "View Report",
+                menu_title: "Clinical Menu",
+                menu_dash: "Analytics Dashboard",
+                menu_rehab: "Rehab Game Lab",
+                pt_waiting: "Waiting for info...",
+                pt_symptom: "Symptom:",
+                dash_hero_title: "Motor Control Assessment Summary",
+                dash_hero_desc: "The system collects movement data to automatically analyze hand dominance, detect Learned Non-Use, and evaluate symmetry between arms.",
+                btn_goto_game: "Go to Assessment (Game Mode)",
+                dash_c1_title: "1. Dominant Hand",
+                dash_c2_title: "2. Symmetry Difference",
+                dash_c3_title: "3. Learned Non-Use Risk",
+                dash_c4_title: "Total Session Score",
+                status_waiting_data: "Awaiting Data",
+                status_waiting_eval: "Pending Independent Eval.",
+                status_waiting_desc: "Requires playing both Free and Forced modes",
+                pts: "Points",
+                set_title: "Pre-Session Settings",
+                btn_tour: "Guide (For Beginners)",
+                set_c1_title: "1. Select Hand Constraint",
+                set_c1_desc: "Choose the target hand for therapy",
+                set_m_left: "Forced Left",
+                set_m_right: "Forced Right",
+                set_m_free: "Free Play (Both)",
+                set_c2_title: "2. Set Timer",
+                set_c2_desc: "Duration for the therapy round",
+                set_t_30: "30 Seconds",
+                set_t_60: "60 Seconds",
+                set_c3_title: "3. Difficulty Level",
+                set_c3_desc: "Target movement pattern",
+                set_l_1: "Lv. 1 (Static)",
+                set_l_2: "Lv. 2 (Precision)",
+                set_l_3: "Lv. 3 (Moving)",
+                game_mode_free: "Mode: Free Play",
+                game_mode_left: "Mode: Forced Left",
+                game_mode_right: "Mode: Forced Right",
+                game_score: "Score:",
+                game_warn_hand: "Please use the assigned hand only!",
+                game_overlay_title: "Ready to Start",
+                game_overlay_desc: "Confirm settings above and click below to open the camera and start the timer.",
+                game_btn_start: "Start Timer",
+                game_btn_new: "Start New Round",
+                log_title: "Session History Logs",
+                log_empty: "No gameplay data yet",
+                btn_gen_report: "Generate Clinical Report",
+                guide_title: "App User Guide & Instructions",
+                guide_subtitle: "Learn how to setup, control via camera, and review reports.",
+                g1_title: "Patient Registration",
+                g1_desc: "When opening the program, please enter the patient's name and HN to indicate the weak side. This is crucial for accurate clinical comparison.",
+                g2_title: "Therapy Settings (Steps 1-2-3)",
+                g2_desc: "There are 3 easy configuration steps:",
+                g2_l1_st: "1. Select Constraint:",
+                g2_l1_nd: "Force left hand (Purple), force right hand (Blue), or 'Free Play' to allow spontaneous usage.",
+                g2_l2_st: "2. Timer:",
+                g2_l2_nd: "Choose 30 or 60 seconds per round.",
+                g2_l3_st: "3. Difficulty:",
+                g2_l3_nd: "Determine the target's movement behavior.",
+                g3_title: "Camera Control & Gameplay",
+                g3_desc1: "Sit centered in front of the camera,",
+                g3_desc2: "raise your index finger",
+                g3_desc3: ", and move the blue cursor to touch the green target. A red alert will flash if the wrong hand is used in forced mode.",
+                g4_title: "Review Diagnostic Report",
+                g4_desc1: "After completing the sessions, switch to the",
+                g4_desc2: "to see real-time data, or click",
+                g4_desc3: "to open the usage charts for the physician to track Learned Non-Use progress.",
+                btn_understood: "I understand, close guide",
+                rep_title: "Learned Non-Use Diagnostic Report",
+                rep_analysis: "Clinical Analysis & Comparison",
+                rep_cap_title: "1. Maximum Capacity Test",
+                rep_cap_desc: "Evaluated from forced single-hand sessions.",
+                rep_score_l: "Left Arm Score:",
+                rep_score_r: "Right Arm Score:",
+                rep_use_title: "2. Spontaneous Use Test",
+                rep_use_desc: "Evaluated from free-play sessions.",
+                rep_freq_l: "Left Arm Usage:",
+                rep_freq_r: "Right Arm Usage:",
+                rep_status_normal: "Normal (Balanced)",
+                rep_status_normal_desc: "The patient uses both arms appropriately when given the freedom to choose.",
+                rep_chart_title: "Performance vs Usage Graph",
+                btn_print: "Print Report",
+                btn_done: "Done",
+                btn_skip_tour: "Skip Tour",
+                btn_next: "Next",
+                lbl_left: "L",
+                lbl_right: "R",
+                lbl_left_hand: "Left Hand",
+                lbl_right_hand: "Right Hand",
+                lbl_sec: "s",
+                warn_lnu_l: "LNU Suspected (Left)",
+                warn_lnu_r: "LNU Suspected (Right)",
+                warn_lnu_desc: "High capacity in forced mode, but avoided in free mode.",
+                end_title: "Session Ended!",
+                end_desc1: "Round Score: ",
+                end_desc2: " points | Data saved.",
+                alert_no_data: "No data available. Please play at least 1 round before viewing the report.",
+                diag_warn_l_desc: "Left arm has a maximum capacity of X% compared to the right, but is only used Y% in free mode. CIMT therapy recommended.",
+                diag_warn_r_desc: "Right arm has adequate capacity, but is only used Y% in free mode.",
+                diag_nodata: "Insufficient Data",
+                diag_nodata_desc: "Please complete all 3 modes (Forced L, Forced R, and Free) for accurate diagnosis."
+            }
+        };
+        let currentLang = 'th';
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            
+            // Update Toggle UI
+            const btns = ['lang-btn-th-modal', 'lang-btn-en-modal', 'lang-btn-th-header', 'lang-btn-en-header'];
+            btns.forEach(id => {
+                const el = document.getElementById(id);
+                if(el) {
+                    if (id.includes(lang)) {
+                        el.classList.add('active');
+                        el.classList.remove('text-slate-500', 'hover:text-slate-700');
+                        el.classList.add('text-blue-600', 'bg-white', 'shadow-sm');
+                    } else {
+                        el.classList.remove('active', 'text-blue-600', 'bg-white', 'shadow-sm');
+                        el.classList.add('text-slate-500', 'hover:text-slate-700');
+                    }
+                }
+            });
+
+            // Update all innerText elements
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang][key]) {
+                    el.innerText = translations[lang][key];
+                }
+            });
+
+            // Update placeholders
+            document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+                const key = el.getAttribute('data-i18n-ph');
+                if (translations[lang][key]) {
+                    el.placeholder = translations[lang][key];
+                }
+            });
+
+            // Update dynamic elements
+            updateDashboardAnalytics();
+            updateSymptomDisplay();
+            updateModeBadge();
+            
+            // Re-render chart if exists
+            if (diagChartObj) generateReport(true); 
+        }
+
+        // Translate helper for dynamic JS texts
+        function t(key) {
+            return translations[currentLang][key] || key;
+        }
+
+    </script>
+
+    <!-- ================= LOGIC SCRIPT ================= -->
+    <script>
+        // Tab Management
+        function switchTab(tabId) {
+            document.getElementById('tab-dashboard').classList.add('hidden');
+            document.getElementById('tab-rehab').classList.add('hidden');
+            
+            document.getElementById('btn-tab-dashboard').className = "w-full flex items-center space-x-3 text-slate-600 hover:bg-slate-50 hover:text-blue-600 px-4 py-3.5 rounded-xl font-bold text-sm transition-all border border-transparent";
+            document.getElementById('btn-tab-rehab').className = "w-full flex items-center space-x-3 text-slate-600 hover:bg-slate-50 hover:text-blue-600 px-4 py-3.5 rounded-xl font-bold text-sm transition-all border border-transparent";
+
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.getElementById('btn-tab-' + tabId).className = "w-full flex items-center space-x-3 bg-blue-50 text-blue-700 px-4 py-3.5 rounded-xl font-bold text-sm transition-all border border-blue-100";
+        }
+
+        // Setting State & Elder-Friendly Handlers
+        let settings = { mode: 'free', time: 30, level: 1 };
+
+        function updateModeBadge() {
+            const badges = { 'left': t('game_mode_left'), 'right': t('game_mode_right'), 'free': t('game_mode_free') };
+            document.getElementById('game-mode-badge').innerText = badges[settings.mode];
+        }
+
+        function setHandMode(mode, btnEl) {
+            settings.mode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.className = "setting-btn mode-btn");
+            if(mode === 'left') btnEl.className = "setting-btn mode-btn active-purple";
+            if(mode === 'right') btnEl.className = "setting-btn mode-btn active-indigo";
+            if(mode === 'free') btnEl.className = "setting-btn mode-btn active-blue";
+            updateModeBadge();
+            updateDashboardAnalytics();
+        }
+
+        function setTimeSetting(sec, btnEl) {
+            settings.time = sec;
+            document.querySelectorAll('.time-btn').forEach(btn => btn.className = "setting-btn time-btn");
+            btnEl.className = "setting-btn time-btn active-blue";
+            document.getElementById('game-timer-display').innerText = `00:${sec}`;
+        }
+
+        function setGameLevel(lvl, btnEl) {
+            settings.level = lvl;
+            document.querySelectorAll('.lvl-btn').forEach(btn => btn.className = "setting-btn lvl-btn");
+            btnEl.className = "setting-btn lvl-btn active-blue";
+        }
+
+        // ---------------------------------------------------
+        // INTERACTIVE TUTORIAL (Elder Onboarding)
+        // ---------------------------------------------------
+        function getTutorialSteps() {
+            return [
+                { id: 'guide-step-1', title: t('set_c1_title'), desc: currentLang==='th'?'หากคุณตาคุณยายมีอาการอ่อนแรงฝั่งซ้าย ให้คลิกเลือก "บังคับซ้าย" เพื่อให้ระบบช่วยเฝ้าระวังให้ใช้เฉพาะแขนซ้ายในการประเมินครับ':'Select the affected arm. E.g., choose "Forced Left" to monitor and ensure only the left arm is used.' },
+                { id: 'guide-step-2', title: t('set_c2_title'), desc: currentLang==='th'?'แนะนำให้เริ่มจาก "30 วินาที" ก่อนนะครับ เพื่อไม่ให้กล้ามเนื้อล้าจนเกินไป':'It is recommended to start with "30 Seconds" to prevent muscle fatigue.' },
+                { id: 'guide-step-3', title: t('set_c3_title'), desc: currentLang==='th'?'สำหรับวันแรก ให้เริ่มที่ "Lv.1 (เป้านิ่ง)" ระบบจะสร้างวงกลมอยู่กับที่ เพื่อให้เอื้อมมือไปแตะได้ง่ายๆ ครับ':'For the first day, select "Lv.1 (Static)" for an easy, non-moving target.' },
+                { id: 'guide-step-4', title: t('game_overlay_title'), desc: currentLang==='th'?'เมื่อตั้งค่าเสร็จแล้ว ให้กดปุ่ม "เริ่มจับเวลา" ที่อยู่ตรงกลางจอภาพด้านซ้ายมือนี้ เพื่อเปิดกล้องและเริ่มฝึกได้เลยครับ!':'Once set, press the "Start Timer" button in this panel to activate the camera and begin!' }
+            ];
+        }
+        
+        let currentStep = 0;
+
+        function startTutorial() {
+            currentStep = 0;
+            document.getElementById('tutorial-overlay').style.display = 'block';
+            showTutorialStep(currentStep);
+        }
+
+        function showTutorialStep(index) {
+            document.querySelectorAll('.highlight-step').forEach(el => el.classList.remove('highlight-step'));
+            const tutBox = document.getElementById('tutorial-box');
+            const steps = getTutorialSteps();
+            
+            if(index < steps.length) {
+                const stepData = steps[index];
+                const targetEl = document.getElementById(stepData.id);
+                
+                if(targetEl) {
+                    targetEl.scrollIntoView({ block: 'center' });
+                    targetEl.classList.add('highlight-step');
+                    
+                    document.getElementById('tut-title').innerText = stepData.title;
+                    document.getElementById('tut-desc').innerText = stepData.desc;
+                    
+                    const rect = targetEl.getBoundingClientRect();
+                    let topPos = rect.bottom + 15;
+                    if (topPos + 220 > window.innerHeight) { 
+                        topPos = rect.top - 200; 
+                        if (topPos < 30) topPos = window.innerHeight / 2 - 100;
+                    }
+                    
+                    let leftPos = rect.left;
+                    if(leftPos + 320 > window.innerWidth) leftPos = window.innerWidth - 350;
+                    if(leftPos < 20) leftPos = 20;
+                    
+                    tutBox.style.top = topPos + 'px';
+                    tutBox.style.left = leftPos + 'px';
+                    tutBox.classList.add('show');
+
+                    const btnNext = document.getElementById('btn-tut-next');
+                    if (index === steps.length - 1) {
+                        btnNext.innerHTML = t('btn_done') + ' <i data-lucide="check" class="w-4 h-4 ml-1"></i>';
+                    } else {
+                        btnNext.innerHTML = t('btn_next') + ' <i data-lucide="arrow-right" class="w-4 h-4 ml-1"></i>';
+                    }
+                    lucide.createIcons();
+                }
+            } else {
+                endTutorial();
+            }
+        }
+
+        function nextTutorial() {
+            currentStep++;
+            showTutorialStep(currentStep);
+        }
+
+        function endTutorial() {
+            document.getElementById('tutorial-overlay').style.display = 'none';
+            document.getElementById('tutorial-box').classList.remove('show');
+            document.querySelectorAll('.highlight-step').forEach(el => el.classList.remove('highlight-step'));
+        }
+
+        // Detailed App Guide Modal Trigger Handlers
+        function openAppGuideModal() {
+            const modal = document.getElementById('app-guide-modal');
+            modal.classList.remove('hidden', 'pointer-events-none');
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+        }
+
+        function closeAppGuideModal() {
+            const modal = document.getElementById('app-guide-modal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => modal.classList.add('hidden', 'pointer-events-none'), 300);
+        }
+
+        function closeAppGuideModal() {
+            const modal = document.getElementById('app-guide-modal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => modal.classList.add('hidden'), 300);
+        }
+
+        // ---------------------------------------------------
+        // Game Engine & MediaPipe Logic
+        // ---------------------------------------------------
+        let gameState = { active: false, target: null };
+        let currentRoundData = { leftHits: 0, rightHits: 0, score: 0 };
+        let clinicalHistory = [];
+        let timeRemaining = 30;
+        let timerInterval;
+        let patientRawSymptom = 'none';
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('webcam-input');
+
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth || 640;
+            canvas.height = canvas.clientHeight || 360;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        let hands, camera;
+        let warningTimeout = null;
+
+        function initCamera() {
+            if(camera) return;
+            hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+            hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+            
+            hands.onResults(results => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (gameState.active && gameState.target) drawTarget();
+
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                        const indexFinger = results.multiHandLandmarks[i][8];
+                        let physicalHand = results.multiHandedness[i].label === 'Left' ? 'right' : 'left';
+                        
+                        // Hand Enforcement
+                        if (gameState.active) {
+                            const warningEl = document.getElementById('wrong-hand-warning');
+                            if ((settings.mode === 'left' && physicalHand === 'right') || 
+                                (settings.mode === 'right' && physicalHand === 'left')) {
+                                
+                                warningEl.classList.remove('opacity-0');
+                                if (warningTimeout) clearTimeout(warningTimeout);
+                                warningTimeout = setTimeout(() => warningEl.classList.add('opacity-0'), 1500);
+                                
+                                drawCursor(indexFinger.x * canvas.width, indexFinger.y * canvas.height, physicalHand, true); 
+                                continue;
+                            }
+                            processHit(indexFinger.x * canvas.width, indexFinger.y * canvas.height, physicalHand);
+                        }
+                        drawCursor(indexFinger.x * canvas.width, indexFinger.y * canvas.height, physicalHand, false);
+                    }
+                }
+            });
+
+            camera = new Camera(video, { onFrame: async () => { await hands.send({image: video}); }, width: 1280, height: 720 });
+            camera.start();
+            resizeCanvas();
+        }
+
+        // Draw Cursor with Mirror Fix for Text
+        function drawCursor(x, y, handType, isWarning) {
+            ctx.beginPath();
+            ctx.arc(x, y, 15, 0, Math.PI * 2);
+            ctx.fillStyle = isWarning ? '#ef4444' : (handType === 'left' ? '#a855f7' : '#6366f1');
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            ctx.save();
+            ctx.translate(x - 22, y + 5); 
+            ctx.scale(-1, 1);             
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 14px Sarabun';
+            ctx.textAlign = 'left';
+            ctx.fillText(handType === 'left' ? t('lbl_left') : t('lbl_right'), 0, 0);
+            ctx.restore();
+        }
+
+        function spawnTarget() {
+            const pad = 60;
+            gameState.target = {
+                x: pad + Math.random() * (canvas.width - pad * 2),
+                y: pad + Math.random() * (canvas.height - pad * 2),
+                radius: settings.level === 1 ? 45 : (settings.level === 2 ? 35 : 25),
+                dx: (Math.random() > 0.5 ? 1 : -1) * (settings.level * 2),
+                dy: (Math.random() > 0.5 ? 1 : -1) * (settings.level * 2)
+            };
+        }
+
+        function drawTarget() {
+            if(!gameState.target) return;
+            const tTarget = gameState.target;
+            
+            // Bug Fix: Level 3 Boundary Collision Logic
+            if(settings.level >= 3) {
+                tTarget.x += tTarget.dx;
+                tTarget.y += tTarget.dy;
+                
+                // Clamp coordinates to prevent vibrating stuck bugs on resize
+                if(tTarget.x < tTarget.radius) { 
+                    tTarget.x = tTarget.radius; 
+                    tTarget.dx = Math.abs(tTarget.dx); 
+                } else if(tTarget.x > canvas.width - tTarget.radius) { 
+                    tTarget.x = canvas.width - tTarget.radius; 
+                    tTarget.dx = -Math.abs(tTarget.dx); 
+                }
+                
+                if(tTarget.y < tTarget.radius) { 
+                    tTarget.y = tTarget.radius; 
+                    tTarget.dy = Math.abs(tTarget.dy); 
+                } else if(tTarget.y > canvas.height - tTarget.radius) { 
+                    tTarget.y = canvas.height - tTarget.radius; 
+                    tTarget.dy = -Math.abs(tTarget.dy); 
+                }
+            }
+            
+            ctx.beginPath();
+            ctx.arc(tTarget.x, tTarget.y, tTarget.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(16, 185, 129, 0.2)'; 
+            ctx.fill();
+            ctx.strokeStyle = '#10b981'; 
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(tTarget.x, tTarget.y, tTarget.radius * 0.4, 0, Math.PI * 2);
+            ctx.fillStyle = '#059669';
+            ctx.fill();
+        }
+
+        function processHit(x, y, handType) {
+            if(!gameState.target) return;
+            const dist = Math.hypot(x - gameState.target.x, y - gameState.target.y);
+            if (dist < gameState.target.radius) {
+                if (handType === 'left') currentRoundData.leftHits++;
+                else currentRoundData.rightHits++;
+                
+                currentRoundData.score += (settings.level * 10);
+                document.getElementById('game-score-display').innerHTML = `<span data-i18n="game_score">${t('game_score')}</span> ${currentRoundData.score}`;
+                spawnTarget(); 
+            }
+        }
+
+        function startRoundTimer() {
+            currentRoundData = { leftHits: 0, rightHits: 0, score: 0 };
+            document.getElementById('game-score-display').innerHTML = `<span data-i18n="game_score">${t('game_score')}</span> 0`;
+            document.getElementById('game-overlay').style.display = 'none';
+            document.getElementById('webcam-input').classList.remove('hidden');
+            
+            gameState.active = true;
+            timeRemaining = settings.time;
+            updateTimerDisplay();
+            spawnTarget();
+            
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeRemaining--;
+                updateTimerDisplay();
+                if(timeRemaining <= 0) endRound();
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            let s = timeRemaining < 10 ? '0' + timeRemaining : timeRemaining;
+            document.getElementById('game-timer-display').innerText = `00:${s}`;
+        }
+
+        function endRound() {
+            clearInterval(timerInterval);
+            gameState.active = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const roundLog = { mode: settings.mode, level: settings.level, time: settings.time, score: currentRoundData.score, leftHits: currentRoundData.leftHits, rightHits: currentRoundData.rightHits };
+            clinicalHistory.push(roundLog);
+            updateRoundLogsUI();
+            updateDashboardAnalytics();
+
+            const overlay = document.getElementById('game-overlay');
+            overlay.style.display = 'flex';
+            document.getElementById('overlay-title').innerText = t('end_title');
+            document.getElementById('overlay-desc').innerText = `${t('end_desc1')}${currentRoundData.score}${t('end_desc2')}`;
+            
+            document.getElementById('btn-start-round').innerHTML = `<span data-i18n="game_btn_new">${t('game_btn_new')}</span>`;
+            document.getElementById('overlay-icon').setAttribute('data-lucide', 'check-circle');
+            document.getElementById('overlay-icon-wrap').className = "bg-emerald-500 p-4 rounded-full border-4 border-emerald-500/30 text-white shadow-lg";
+            lucide.createIcons();
+        }
+
+        function updateRoundLogsUI() {
+            const container = document.getElementById('round-logs-container');
+            if (document.getElementById('log-empty')) container.innerHTML = '';
+            
+            const log = clinicalHistory[clinicalHistory.length - 1];
+            
+            const modeNames = { 'left': t('set_m_left'), 'right': t('set_m_right'), 'free': t('set_m_free') };
+            const modeColors = { 'left': 'text-purple-600 bg-purple-50', 'right': 'text-indigo-600 bg-indigo-50', 'free': 'text-blue-600 bg-blue-50' };
+
+            const div = document.createElement('div');
+            div.className = "p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center";
+            div.innerHTML = `
+                <div>
+                    <span class="text-[10px] font-bold ${modeColors[log.mode]} px-2 py-0.5 rounded-md uppercase">Lv.${log.level} | ${modeNames[log.mode]}</span>
+                    <p class="text-xs font-semibold text-slate-700 mt-1">${log.time}${t('lbl_sec')} | ${t('lbl_left')}: ${log.leftHits}, ${t('lbl_right')}: ${log.rightHits}</p>
+                </div>
+                <div class="text-right">
+                    <span class="block text-lg font-black text-emerald-500 leading-none">${log.score}</span>
+                    <span class="text-[9px] font-bold text-slate-400">SCORE</span>
+                </div>
+            `;
+            container.prepend(div);
+        }
+
+        function updateSymptomDisplay() {
+            const val = patientRawSymptom;
+            let displayTxt = '-';
+            if(val === 'left') displayTxt = t('symp_left');
+            if(val === 'right') displayTxt = t('symp_right');
+            if(val === 'none') displayTxt = t('symp_none');
+            document.getElementById('display-pt-symp').innerText = displayTxt;
+        }
+
+        // Setup functions (Patient Data and Registration UI)
+        document.getElementById('patient-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            document.getElementById('display-pt-name').innerText = document.getElementById('pt-name').value;
+            document.getElementById('display-pt-hn').innerText = `HN: ${document.getElementById('pt-hn').value}`;
+            
+            patientRawSymptom = document.getElementById('pt-symptom').value;
+            updateSymptomDisplay();
+
+            document.getElementById('patient-modal').classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => document.getElementById('patient-modal').classList.add('hidden'), 300);
+            initCamera();
+        });
+
+        // Dashboard calculation and analysis logic
+        function setLNUWarning(card, stat, desc, wrap, icon, title, msg) {
+            card.className = "bg-rose-50 p-5 rounded-2xl border border-rose-200 shadow-sm transition-colors duration-300";
+            wrap.className = "p-1.5 bg-rose-100 text-rose-600 rounded-lg";
+            icon.setAttribute('data-lucide', 'alert-triangle');
+            stat.innerText = title;
+            stat.className = "text-lg font-black text-rose-700 leading-tight";
+            desc.innerText = msg;
+            desc.className = "text-xs text-rose-600 mt-2 font-medium";
+        }
+
+        function setLNUNormal(card, stat, desc, wrap, icon) {
+            card.className = "bg-emerald-50 p-5 rounded-2xl border border-emerald-200 shadow-sm transition-colors duration-300";
+            wrap.className = "p-1.5 bg-emerald-100 text-emerald-600 rounded-lg";
+            icon.setAttribute('data-lucide', 'shield-check');
+            stat.innerText = t('rep_status_normal');
+            stat.className = "text-lg font-black text-emerald-700 leading-tight";
+            desc.innerText = t('rep_status_normal_desc');
+            desc.className = "text-xs text-emerald-600 mt-2 font-medium";
+        }
+
+        function updateDashboardAnalytics() {
+            // Bug Fix: Match Dashboard Logic to Report Logic (Using Max Capacity instead of Sum/Avg)
+            let maxForcedLeft = 0, countForcedLeft = 0;
+            let maxForcedRight = 0, countForcedRight = 0;
+            let freeLeftUsage = 0, freeRightUsage = 0;
+            let totalScore = 0;
+
+            clinicalHistory.forEach(r => {
+                totalScore += r.score;
+                if(r.mode === 'left') { 
+                    if(r.score > maxForcedLeft) maxForcedLeft = r.score; 
+                    countForcedLeft++; 
+                }
+                if(r.mode === 'right') { 
+                    if(r.score > maxForcedRight) maxForcedRight = r.score; 
+                    countForcedRight++; 
+                }
+                if(r.mode === 'free') { 
+                    freeLeftUsage += r.leftHits; 
+                    freeRightUsage += r.rightHits; 
+                }
+            });
+            
+            const totalFreeUse = freeLeftUsage + freeRightUsage;
+            const pctFreeLeft = totalFreeUse > 0 ? (freeLeftUsage / totalFreeUse) : 0.5;
+            const pctFreeRight = totalFreeUse > 0 ? (freeRightUsage / totalFreeUse) : 0.5;
+
+            if (totalFreeUse > 0) {
+                document.getElementById('dash-dominant').innerText = freeRightUsage >= freeLeftUsage ? t('lbl_right_hand') : t('lbl_left_hand');
+            }
+
+            const diff = Math.abs(pctFreeRight - pctFreeLeft) * 100;
+            document.getElementById('dash-symmetry').innerText = totalFreeUse > 0 ? `${diff.toFixed(1)}%` : '0%';
+
+            document.getElementById('dash-total-score').innerText = `${totalScore}`;
+
+            const lnuCard = document.getElementById('dash-lnu-card');
+            const lnuStatus = document.getElementById('dash-lnu-status');
+            const lnuDesc = document.getElementById('dash-lnu-desc');
+            const lnuIcon = document.getElementById('lnu-icon');
+            const lnuWrap = document.getElementById('lnu-icon-wrap');
+
+            let diagnosis = "normal"; 
+            if (countForcedLeft > 0 && countForcedRight > 0 && totalFreeUse >= 5) {
+                // Using Max Capacity for accurate LNU diagnosis matching the report
+                const capacityRatioLeft = maxForcedLeft / (maxForcedRight || 1);
+                const capacityRatioRight = maxForcedRight / (maxForcedLeft || 1);
+
+                if (capacityRatioLeft >= 0.3 && pctFreeLeft < 0.20) {
+                    diagnosis = "lnu-left";
+                } else if (capacityRatioRight >= 0.3 && pctFreeRight < 0.20) {
+                    diagnosis = "lnu-right";
+                }
+            }
+
+            if (diagnosis === "lnu-left") {
+                setLNUWarning(lnuCard, lnuStatus, lnuDesc, lnuWrap, lnuIcon, t('warn_lnu_l'), t('warn_lnu_desc'));
+            } else if (diagnosis === "lnu-right") {
+                setLNUWarning(lnuCard, lnuStatus, lnuDesc, lnuWrap, lnuIcon, t('warn_lnu_r'), t('warn_lnu_desc'));
+            } else if (countForcedLeft > 0 && countForcedRight > 0 && totalFreeUse >= 5) {
+                setLNUNormal(lnuCard, lnuStatus, lnuDesc, lnuWrap, lnuIcon);
+            }
+
+            lucide.createIcons();
+        }
+
+        let diagChartObj = null;
+        function generateReport(isRefreshing = false) {
+            if (clinicalHistory.length === 0) {
+                if(!isRefreshing) alert(t('alert_no_data'));
+                return;
+            }
+
+            let maxLeft = 0, maxRight = 0;
+            let freeL = 0, freeR = 0;
+
+            clinicalHistory.forEach(r => {
+                if(r.mode === 'left' && r.score > maxLeft) maxLeft = r.score;
+                if(r.mode === 'right' && r.score > maxRight) maxRight = r.score;
+                if(r.mode === 'free') { freeL += r.leftHits; freeR += r.rightHits; }
+            });
+
+            document.getElementById('report-cap-l').innerText = maxLeft;
+            document.getElementById('report-cap-r').innerText = maxRight;
+            
+            const tFree = freeL + freeR;
+            const pctL = tFree > 0 ? Math.round((freeL/tFree)*100) : 0;
+            const pctR = tFree > 0 ? Math.round((freeR/tFree)*100) : 0;
+            document.getElementById('report-use-l').innerText = pctL;
+            document.getElementById('report-use-r').innerText = pctR;
+
+            const title = document.getElementById('report-diagnosis-title');
+            const desc = document.getElementById('report-diagnosis-desc');
+            const card = document.getElementById('report-diagnosis-card');
+            
+            if (maxLeft > 0 && maxRight > 0 && tFree > 0) {
+                let capRatioLeft = maxLeft / maxRight;
+                if (capRatioLeft > 0.3 && pctL < 20) {
+                    title.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5"></i> ${t('warn_lnu_l')}`;
+                    title.className = "font-extrabold text-lg flex items-center gap-2 mb-2 text-rose-700";
+                    desc.innerText = t('diag_warn_l_desc').replace('X', Math.round(capRatioLeft*100)).replace('Y', pctL);
+                    card.className = "p-5 rounded-2xl border bg-rose-50 border-rose-200";
+                } 
+                else if ((maxRight/maxLeft) > 0.3 && pctR < 20) {
+                    title.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5"></i> ${t('warn_lnu_r')}`;
+                    title.className = "font-extrabold text-lg flex items-center gap-2 mb-2 text-rose-700";
+                    desc.innerText = t('diag_warn_r_desc').replace('Y', pctR);
+                    card.className = "p-5 rounded-2xl border bg-rose-50 border-rose-200";
+                }
+                else {
+                    title.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5"></i> ${t('rep_status_normal')}`;
+                    title.className = "font-extrabold text-lg flex items-center gap-2 mb-2 text-emerald-700";
+                    desc.innerText = t('rep_status_normal_desc');
+                    card.className = "p-5 rounded-2xl border bg-emerald-50 border-emerald-200";
+                }
+            } else {
+                 title.innerHTML = `<i data-lucide="info" class="w-5 h-5"></i> ${t('diag_nodata')}`;
+                 title.className = "font-extrabold text-lg flex items-center gap-2 mb-2 text-slate-700";
+                 desc.innerText = t('diag_nodata_desc');
+                 card.className = "p-5 rounded-2xl border bg-slate-100 border-slate-200";
+            }
+
+            const ctxChart = document.getElementById('diagnosisChart').getContext('2d');
+            if(diagChartObj) diagChartObj.destroy();
+            
+            const highestCap = Math.max(maxLeft, maxRight, 1);
+            const normCapL = (maxLeft/highestCap)*100;
+            const normCapR = (maxRight/highestCap)*100;
+
+            diagChartObj = new Chart(ctxChart, {
+                type: 'bar',
+                data: {
+                    labels: [t('lbl_left_hand'), t('lbl_right_hand')],
+                    datasets: [
+                        {
+                            label: t('rep_cap_title'),
+                            data: [normCapL, normCapR],
+                            backgroundColor: '#3b82f6', 
+                            borderRadius: 6
+                        },
+                        {
+                            label: t('rep_use_title'),
+                            data: [pctL, pctR],
+                            backgroundColor: '#10b981', 
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, max: 100 } },
+                    plugins: { legend: { position: 'bottom', labels: { font: { family: 'Sarabun' } } } }
+                }
+            });
+
+            if(!isRefreshing) {
+                const reportModal = document.getElementById('report-modal');
+                reportModal.classList.remove('hidden', 'pointer-events-none');
+                setTimeout(() => reportModal.classList.remove('opacity-0'), 10);
+            }
+            lucide.createIcons();
+        }
+
+        function closeReport() {
+            const reportModal = document.getElementById('report-modal');
+            reportModal.classList.add('opacity-0');
+            setTimeout(() => reportModal.classList.add('hidden', 'pointer-events-none'), 300);
+        }
+
+        window.onload = () => {
+            lucide.createIcons();
+            document.getElementById('patient-modal').classList.remove('hidden', 'opacity-0');
+            // Init Language
+            setLanguage('th');
+        };
+    </script>
+</body>
+</html>
